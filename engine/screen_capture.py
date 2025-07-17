@@ -15,6 +15,9 @@ class ScreenCapturer:
         self.mss_instance = mss.mss()
 
     def capture(self):
+        """
+        Capture the screen as an RGB NumPy array.
+        """
         try:
             monitor = self.mss_instance.monitors[self.monitor_index]
             screenshot = self.mss_instance.grab(monitor)
@@ -25,6 +28,9 @@ class ScreenCapturer:
             return None
         
     def preview(self):
+        """
+        Show the captured screen in a window (for debug/testing).
+        """
         frame = self.capture()
         if frame is not None:
             cv2.imshow("Screenshot", frame)
