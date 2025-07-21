@@ -21,8 +21,9 @@ class ScreenCapturer:
         try:
             monitor = self.mss_instance.monitors[self.monitor_index]
             screenshot = self.mss_instance.grab(monitor)
-            img = np.array(screenshot)[:, :, :3]
-            return img
+            img_bgr = np.array(screenshot)[:, :, :3]
+            img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+            return img_rgb
         except Exception as e:
             print(f"[ScreenCapturer/capture] -> {e}")
             return None
