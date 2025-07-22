@@ -1,9 +1,14 @@
 {
-  "led_config": {"top": 10, "right": 6, "bottom": 10, "left": 6},
-  "serial_port": "COM3",
-  "baud_rate": 115200,
-  "margin": 40,
-  "update_rate_hz": 30,
-  "order": "clockwise",
-  "start_side": "bottom"
+    "led_config": {
+        "top": 10,
+        "right": 6,
+        "bottom": 10,
+        "left": 6
+    },
+    "serial_port": "COM3",
+    "baud_rate": 115200,
+    "margin": 40,
+    "update_rate_hz": 30,
+    "order": "clockwise",
+    "start_side": "bottom"
 }

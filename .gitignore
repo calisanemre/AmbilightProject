@@ -1,0 +1,4 @@
+.vscode/
+.arduino/
+*.code-workspace/
+test.py
