@@ -26,6 +26,7 @@ class SettingsWindow:
         self.config_loaded = self.load_config_if_exists()
         self.on_save = on_save
         self.on_brightness_change_cb = on_brightness_change_cb
+        self.last_sent_brightness = None
 
 
     def load_config_if_exists(self):
@@ -72,7 +73,7 @@ class SettingsWindow:
         if self.config_loaded:
             self.notebook.select(0)
 
-        self.window = None
+        #self.window = None
 
 
     def setup_configure_tab(self):
@@ -204,12 +205,16 @@ class SettingsWindow:
 
 
     def on_brightness_change(self, value):
-        try:
-            brightness = float(value)
-            if hasattr(self, "on_brightness_change_cb") and self.on_brightness_change_cb:
-                self.on_brightness_change_cb(brightness)
-        except Exception as e:
-            print("[SettingsWindow] Brightness change error:", e)
+        def send():
+            try:
+                brightness = round(float(value))
+                if getattr(self, "last_sent_brightness", None) != brightness:
+                    self.last_sent_brightness = brightness
+                    if callable(self.on_brightness_change_cb):
+                        self.on_brightness_change_cb(brightness)
+            except Exception as e:
+                print("[SettingsWindow] Brightness change error:", e)
+        threading.Thread(target=send, daemon=True).start()
 
 
     def setup_general_tab(self):
@@ -261,11 +266,14 @@ class TrayApp:
         self.device = DeviceInterface.from_config(self.config_path)
         try:
             self.device.generate_ino()
-            self.device.upload_ino()
-            self.device.connect()
-            self.is_device_connected = True
+            upload_success = self.device.upload_ino()
+            connect_success = False
+            if upload_success:
+                connect_success = self.device.connect()
+            self.is_device_connected = upload_success and connect_success
         except Exception as e:
             print("[TrayApp] Couldn't connected with the Device: ",e)
+
 
     def start_system(self):
         if not self.is_device_connected:
@@ -309,11 +317,17 @@ class TrayApp:
 
     def quit_app(self, _=None):
         print("[TrayApp] Quitting...")
+        self.running = False
+        if hasattr(self, "sender_thread") and self.sender_thread.is_alive():
+            self.sender_thread.join(timeout=1)
+        if hasattr(self, "device") and self.device:
+            self.device.disconnect()
         if self.tray_icon:
             self.tray_icon.stop()
-
         if hasattr(self, "root") and self.root:
+            self.root.quit()
             self.root.destroy()
+        os._exit(0)
 
 
     def update_icon(self):

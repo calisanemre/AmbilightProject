@@ -5,10 +5,11 @@ import os
 import subprocess
 
 class DeviceInterface:
-    def __init__(self, port, baudrate, timeout = 1):
+    def __init__(self, port, baudrate, timeout = 1, write_timeout = 1):
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout
+        self.write_timeout = write_timeout
         self.serial = None
 
 
@@ -19,7 +20,7 @@ class DeviceInterface:
 
         port = config.get("serial_port", "COM3")
         baudrate = config.get("baud_rate", 115200)
-        return cls(port=port, baudrate=baudrate)
+        return cls(port=port, baudrate=baudrate, write_timeout = 1)
 
 
     def generate_ino(self, config_path="config/config.json", template_path="arduino/arduino_template.tmpl", output_dir="arduino"):
@@ -56,22 +57,27 @@ class DeviceInterface:
             subprocess.run(upload_cmd, check=True)
 
             print("[DeviceInterface] Sketch uploaded successfully.")
+            return True
         except subprocess.CalledProcessError as e:
             print(f"[DeviceInterface] Upload failed: {e}")
+            return False
 
 
     def connect(self):
         try:
-            self.serial = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
+            self.serial = serial.Serial(self.port, self.baudrate, timeout=self.timeout, write_timeout=self.write_timeout)
             time.sleep(2)
             print(f"[DeviceInterface] Connected: {self.port}")
+            return True
         except Exception as e:
             print(f"[DeviceInterface] Connection error: {e}")
+            return False
 
 
     def disconnect(self):
         if self.serial and self.serial.is_open:
             self.serial.close()
+            self.serial = None
             print("[DeviceInterface] Serial port closed.")
 
 
@@ -86,18 +92,20 @@ class DeviceInterface:
                 r, g, b = color
                 data += bytes([r, g, b])
             self.serial.write(data)
+            time.sleep(0.01)
         except Exception as e:
             print(f"[DeviceInterface] Data transmission error: {e}")
 
     def send_brightness(self, brightness_level):
         if not self.serial or not self.serial.is_open:
-            print("[DeviceInterface] Serial connection not open.")
+            print("[DeviceInterface] Serial connection is not open.")
             return
 
         try:
             # Brightness Protocol: b{value}\n
             command = f"b{int(brightness_level):04d}\n"
             self.serial.write(command.encode())
+            time.sleep(0.01)
             print(f"[DeviceInterface] Brightness command sent: {int(brightness_level):04d}")
         except Exception as e:
             print(f"[DeviceInterface] Brightness command error: {e}")
