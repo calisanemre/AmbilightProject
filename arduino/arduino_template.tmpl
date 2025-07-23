@@ -1,9 +1,9 @@
 #include <Arduino.h>
 #include <FastLED.h>
 
-#define LED_PIN     6
-#define NUM_LEDS    32
-#define BAUD_RATE   115200
+#define LED_PIN     {{LED_PIN}}
+#define NUM_LEDS    {{NUM_LEDS}}
+#define BAUD_RATE   {{BAUD_RATE}}
 
 CRGB leds[NUM_LEDS];
 uint8_t data[NUM_LEDS * 3];

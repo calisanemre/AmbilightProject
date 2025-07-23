@@ -12,27 +12,27 @@ class ScreenCapturer:
             ...
         """
         self.monitor_index = monitor_index
-        self.mss_instance = mss.mss()
 
-    def capture(self):
+    def capture_screen(self):
         """
         Capture the screen as an RGB NumPy array.
         """
         try:
-            monitor = self.mss_instance.monitors[self.monitor_index]
-            screenshot = self.mss_instance.grab(monitor)
-            img_bgr = np.array(screenshot)[:, :, :3]
-            img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-            return img_rgb
+            with mss.mss() as sct:
+                monitor = sct.monitors[self.monitor_index]
+                screenshot = sct.grab(monitor)
+                img_bgr = np.array(screenshot)[:, :, :3]
+                img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+                return img_rgb
         except Exception as e:
-            print(f"[ScreenCapturer/capture] -> {e}")
+            print(f"[ScreenCapturer/capture_screen] -> {e}")
             return None
         
     def preview(self):
         """
         Show the captured screen in a window (for debug/testing).
         """
-        frame = self.capture()
+        frame = self.capture_screen()
         if frame is not None:
             cv2.imshow("Screenshot", frame)
             cv2.waitKey(0)

@@ -3,3 +3,4 @@
 .arduino/
 *.code-workspace/
 test.py
+build/

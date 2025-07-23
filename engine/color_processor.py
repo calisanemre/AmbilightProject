@@ -1,4 +1,5 @@
 import numpy as np
+import json
 
 class ColorProcessor: 
 
@@ -8,6 +9,18 @@ class ColorProcessor:
         self.order = order
         self.start_side = start_side
 
+    @classmethod
+    def from_config(cls, config_path="config/config.json"):
+        with open(config_path) as f:
+            config = json.load(f)
+
+        led_config = config.get("led_config", {"top": 10,"right": 6,"bottom": 10,"left": 6})
+        margin = config.get("margin", 40)
+        order = config.get("order", "clockwise")
+        start_side = config.get("start_side", "bottom")
+        return cls(led_config=led_config, margin=margin, order=order, start_side=start_side) 
+    
+    
     def get_led_colors(self, image):
         
         h, w, _ = image.shape
