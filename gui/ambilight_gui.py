@@ -18,13 +18,14 @@ CONFIG_FILE = "config/config.json"
 
 
 class SettingsWindow:
-    def __init__(self, on_save=None):
+    def __init__(self, on_save=None, on_brightness_change_cb = None):
         self.window = None
         self.notebook = None
         self.config = None
         self.config_file = CONFIG_FILE
         self.config_loaded = self.load_config_if_exists()
         self.on_save = on_save
+        self.on_brightness_change_cb = on_brightness_change_cb
 
 
     def load_config_if_exists(self):
@@ -202,11 +203,28 @@ class SettingsWindow:
         self.notebook.select(0)
 
 
+    def on_brightness_change(self, value):
+        try:
+            brightness = float(value)
+            if hasattr(self, "on_brightness_change_cb") and self.on_brightness_change_cb:
+                self.on_brightness_change_cb(brightness)
+        except Exception as e:
+            print("[SettingsWindow] Brightness change error:", e)
+
+
     def setup_general_tab(self):
         ttk.Label(self.tab_general, text="Brightness:").pack(pady=(10, 0))
-        brightness_slider = ttk.Scale(self.tab_general, from_=0, to=100, orient='horizontal')
-        brightness_slider.set(75)
-        brightness_slider.pack()
+        self.brightness_var = tk.DoubleVar()
+        self.brightness_slider = ttk.Scale(
+            self.tab_general,
+            from_=0,
+            to=100,
+            orient='horizontal',
+            variable=self.brightness_var,
+            command=self.on_brightness_change
+        )
+        self.brightness_slider.set(75)
+        self.brightness_slider.pack()
 
 
 class TrayApp:
@@ -214,7 +232,10 @@ class TrayApp:
         self.running = False
         self.is_device_connected = False
         self.config_path = CONFIG_FILE
-        self.settings_ui = SettingsWindow(on_save=self._on_config_saved)
+        self.settings_ui = SettingsWindow(
+            on_save=self._on_config_saved,
+            on_brightness_change_cb=self.set_brightness
+            )
         
         if self.settings_ui.config_loaded:
             self._initialize_components()
@@ -227,6 +248,11 @@ class TrayApp:
     def _on_config_saved(self):
         print("[TrayApp] Config saved. Initializing components...")
         self._initialize_components()
+
+
+    def set_brightness(self, brightness):
+        if hasattr(self, "device") and self.device:
+            self.device.send_brightness(brightness)
 
 
     def _initialize_components(self):
@@ -265,14 +291,13 @@ class TrayApp:
             return
         
         try:
-            # Config'ten update_rate al
+            # Get update_rate
             update_rate = self.settings_ui.config.get("update_rate_hz", 30)
             interval = 1.0 / update_rate
 
             while self.running:
                 color = self.color_processor.get_led_colors(self.screen_capturer.capture_screen())
-                dummy_colors = [(255, 0, 0)] * 32  # tüm LED'leri kırmızı yap
-                self.device.send_colors(dummy_colors)
+                self.device.send_colors(color)
                 time.sleep(interval)
         except Exception as e:
             print("[TrayApp] color_sender_loop error:", e)

@@ -95,9 +95,9 @@ class DeviceInterface:
             return
 
         try:
-            # Protokol: b{value}\n → örn. b128
-            command = f"b{brightness_level}\n"
+            # Brightness Protocol: b{value}\n
+            command = f"b{int(brightness_level):04d}\n"
             self.serial.write(command.encode())
-            print(f"[DeviceInterface] Brightness command sent: {brightness_level}")
+            print(f"[DeviceInterface] Brightness command sent: {int(brightness_level):04d}")
         except Exception as e:
             print(f"[DeviceInterface] Brightness command error: {e}")
