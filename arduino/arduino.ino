@@ -2,7 +2,7 @@
 #include <FastLED.h>
 
 #define LED_PIN     6
-#define NUM_LEDS    32
+#define NUM_LEDS    140
 #define BAUD_RATE   115200
 #define MAX_DECIMAL 4
 

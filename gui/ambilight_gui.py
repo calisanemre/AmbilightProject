@@ -86,27 +86,26 @@ class SettingsWindow:
         row = 0
 
         # === LED Configuration ===
-        ttk.Label(frame, text="LED Count:", width=label_width, anchor='w').grid(row=row, column=0, pady=5, sticky='w')
+        ttk.Label(frame, text="LED Configuration:", width=label_width, anchor='w').grid(row=row, column=0, pady=5, sticky='w')
 
-        led_frame = ttk.Frame(frame)
-        led_frame.grid(row=row, column=1, sticky='w')
+        led_config_frame = ttk.Frame(frame)
+        led_config_frame.grid(row=row, column=1, sticky='w')
 
-        # Labels for directions
-        for i, direction in enumerate(["Top", "Right", "Bottom", "Left"]):
-            ttk.Label(led_frame, text=direction).grid(row=0, column=i, padx=2)
+        # Entry'leri tanımlarken DoubleVar bağla
+        self.led_top_var = tk.StringVar(value="30")
+        self.led_right_var = tk.StringVar(value="20")
+        self.led_bottom_var = tk.StringVar(value="30")
+        self.led_left_var = tk.StringVar(value="20")
+        self.enable_corners_var = tk.BooleanVar(value=self.config.get("corners_enabled", True))
 
-        # Entry boxes
-        self.led_top = ttk.Entry(led_frame, width=4)
-        self.led_right = ttk.Entry(led_frame, width=4)
-        self.led_bottom = ttk.Entry(led_frame, width=4)
-        self.led_left = ttk.Entry(led_frame, width=4)
+        self.led_top = ttk.Entry(led_config_frame, width=4, textvariable=self.led_top_var)
+        self.led_right = ttk.Entry(led_config_frame, width=4, textvariable=self.led_right_var)
+        self.led_bottom = ttk.Entry(led_config_frame, width=4, textvariable=self.led_bottom_var)
+        self.led_left = ttk.Entry(led_config_frame, width=4, textvariable=self.led_left_var)
 
-        led_entries = [self.led_top, self.led_right, self.led_bottom, self.led_left]
-        default_values = [10, 6, 10, 6]
+        # Change Button
+        ttk.Button(led_config_frame, text="Change", command=self.show_led_preview_window).grid(row=2, column=0, columnspan=4, pady=(5, 0))
 
-        for i, (entry, val) in enumerate(zip(led_entries, default_values)):
-            entry.insert(0, str(val))
-            entry.grid(row=1, column=i, padx=2, pady=2)
 
         # === Serial Port ===
         row += 1
@@ -141,14 +140,14 @@ class SettingsWindow:
         row += 1
         ttk.Label(frame, text="LED Order:", width=label_width, anchor='w').grid(row=row, column=0, pady=5, sticky='w')
         self.order_combo = ttk.Combobox(frame, values=["Clockwise", "Counter-Clockwise"], state='readonly', width=entry_width)
-        self.order_combo.set("Clockwise")
+        self.order_combo.set("Counter-Clockwise")
         self.order_combo.grid(row=row, column=1, sticky='w')
 
         # === Start Side ===
         row += 1
         ttk.Label(frame, text="Start Side:", width=label_width, anchor='w').grid(row=row, column=0, pady=5, sticky='w')
         self.start_side_combo = ttk.Combobox(frame, values=["Top", "Right", "Bottom", "Left"], state='readonly', width=entry_width)
-        self.start_side_combo.set("Bottom")
+        self.start_side_combo.set("Right")
         self.start_side_combo.grid(row=row, column=1, sticky='w')
 
         # === Save Button ===
@@ -159,7 +158,7 @@ class SettingsWindow:
             command=self.save_and_enable
         ).grid(row=row, column=0, columnspan=2, pady=20)
 
-
+        
     # helper method to get serial ports
     def get_serial_ports(self):
         ports = [port.device for port in serial.tools.list_ports.comports()]
@@ -180,7 +179,8 @@ class SettingsWindow:
             "margin": int(self.margin_entry.get()),
             "update_rate_hz": int(self.update_rate_combo.get()),
             "order": self.order_combo.get().lower().replace("-", ""),
-            "start_side": self.start_side_combo.get().lower()
+            "start_side": self.start_side_combo.get().lower(),
+            "enable_corners": self.enable_corners_var.get()
         }
 
         # JSON file save
@@ -230,6 +230,203 @@ class SettingsWindow:
         )
         self.brightness_slider.set(75)
         self.brightness_slider.pack()
+
+
+    def show_led_preview_window(self):
+        hud = LEDPreviewHUD(
+            self.window,
+            self.led_top_var,
+            self.led_right_var,
+            self.led_bottom_var,
+            self.led_left_var,
+            self.order_combo,
+            self.start_side_combo,
+            self.enable_corners_var
+        )
+        hud.open()
+
+class LEDPreviewHUD:
+    def __init__(self, master, led_top_var, led_right_var, led_bottom_var, led_left_var, order_combo, start_side_combo, enable_corners_var):
+        self.master = master
+        self.led_top_var = led_top_var
+        self.led_right_var = led_right_var
+        self.led_bottom_var = led_bottom_var
+        self.led_left_var = led_left_var
+        self.order_combo = order_combo
+        self.start_side_combo = start_side_combo
+        self.enable_corners_var = enable_corners_var
+        self.hud_window = None
+        self.hud_canvas = None
+
+    def open(self):
+        self._open_hud()
+        self.master.after(200, self._open_editor)  # küçük gecikme ile editor pencereyi sonra aç
+
+    def _open_hud(self):
+        screen_width = self.master.winfo_screenwidth()
+        screen_height = self.master.winfo_screenheight()
+        self.hud_window = tk.Toplevel()
+        self.hud_window.overrideredirect(True)
+        self.hud_window.attributes("-topmost", True)
+        self.hud_window.attributes("-transparentcolor", "white")
+        self.hud_window.geometry(f"{screen_width}x{screen_height}+0+0")
+
+        self.hud_canvas = tk.Canvas(self.hud_window, bg="white", highlightthickness=0)
+        self.hud_canvas.pack(fill="both", expand=True)
+        self.hud_window.bind("<Escape>", lambda e: self.close())
+
+        self.redraw()
+
+    def _open_editor(self):
+        config_popup = tk.Toplevel()
+        config_popup.title("Edit LED Configuration")
+        config_popup.geometry("340x260")
+        config_popup.resizable(False, False)
+
+        # LED yönleri için yapı
+        labels = ["Top", "Right", "Bottom", "Left"]
+        vars = [self.led_top_var, self.led_right_var, self.led_bottom_var, self.led_left_var]
+        entries = []
+
+        for i, (label, var) in enumerate(zip(labels, vars)):
+            tk.Label(config_popup, text=f"{label}:").grid(row=i, column=0, padx=10, pady=5, sticky="w")
+
+            entry = tk.Entry(config_popup, width=6)
+            entry.insert(0, var.get())
+            entry.grid(row=i, column=1)
+            entries.append(entry)
+
+            def make_stepper(e=entry, v=var, delta=1):
+                def step():
+                    try:
+                        val = max(0, int(e.get()) + delta)
+                        e.delete(0, tk.END)
+                        e.insert(0, str(val))
+                        v.set(str(val))
+                        self.redraw()
+                    except:
+                        pass
+                return step
+
+            tk.Button(config_popup, text="–", width=2, command=make_stepper(delta=-1)).grid(row=i, column=2, padx=(5,0))
+            tk.Button(config_popup, text="+", width=2, command=make_stepper(delta=1)).grid(row=i, column=3)
+
+        # Köşe LED'lerini etkinleştir
+        corner_check = tk.Checkbutton(
+            config_popup,
+            text="Enable Corners",
+            variable=self.enable_corners_var,
+            command=self.redraw
+        )
+        corner_check.grid(row=5, column=0, columnspan=3, pady=(10, 5), sticky="w")
+
+        # Apply butonu (isteğe bağlı, elle düzenleyen kullanıcılar için)
+        def apply():
+            for entry, var in zip(entries, vars):
+                var.set(entry.get())
+            self.redraw()
+
+        tk.Button(config_popup, text="Apply", command=apply).grid(row=6, column=0, columnspan=4, pady=10)
+
+    
+    def redraw(self):
+        if not self.hud_canvas:
+            return
+
+        self.hud_canvas.delete("all")
+
+        try:
+            top = int(self.led_top_var.get())
+            right = int(self.led_right_var.get())
+            bottom = int(self.led_bottom_var.get())
+            left = int(self.led_left_var.get())
+        except:
+            top = right = bottom = left = 0
+
+        w = self.hud_window.winfo_screenwidth()
+        h = self.hud_window.winfo_screenheight()
+        thickness = 25
+        enable_corners = self.enable_corners_var.get()
+
+        order = self.order_combo.get().lower().replace("-", "")
+        start = self.start_side_combo.get().lower()
+
+        corners = ["top-right", "bottom-right", "bottom-left", "top-left"]
+        edges = ["top", "right","bottom", "left"]
+        sides = []
+        for i , _ in enumerate(edges):
+            sides.append(edges[i])
+            sides.append(corners[i])
+
+        if order == "counterclockwise":
+            sides = sides[::-1]
+        start_index = sides.index(start)
+        draw_order = sides[start_index:] + sides[:start_index]
+
+        led_counts = {"top": top, "right": right, "bottom": bottom, "left": left}
+        index = 0
+
+        for side in draw_order:
+            if side in corners:
+                if enable_corners:
+                    if side == "top-right":
+                        x1 = w - thickness
+                        x2 = w
+                        y1, y2 = 0, thickness
+                    if side == "bottom-right":
+                        x1 = w - thickness
+                        x2 = w
+                        y1, y2 = h-thickness, h
+                    if side == "bottom-left":
+                        x1 = 0
+                        x2 = thickness
+                        y1, y2 = h-thickness, h
+                    if side == "top-left":
+                        x1 = 0
+                        x2 = thickness
+                        y1, y2 = 0, thickness
+                    self.hud_canvas.create_rectangle(x1, y1, x2, y2, fill="gray", outline="black")
+                    self.hud_canvas.create_text((x1+x2)/2, (y1+y2)/2, text=str(index + 1), fill="#fffffe", font=("Arial", 14, "bold"))
+                    index += 1
+                continue
+            
+            count = led_counts[side]
+            for i in range(count):
+                i_normal = i
+
+                if side == "bottom" or side == "left":
+                    if order == "clockwise":
+                        i_normal = count - 1 - i 
+                else:
+                    if order == "counterclockwise":
+                        i_normal = count - 1 - i 
+
+                if side == "top":
+                    x1 = thickness + (w - 2 * thickness) * i_normal / count
+                    x2 = thickness + (w - 2 * thickness) * (i_normal + 1) / count
+                    y1, y2 = 0, thickness
+                elif side == "bottom":
+                    x1 = thickness + (w - 2 * thickness) * i_normal / count
+                    x2 = thickness + (w - 2 * thickness) * (i_normal + 1) / count
+                    y1, y2 = h - thickness, h
+                elif side == "left":
+                    y1 = thickness + (h - 2 * thickness) * i_normal / count
+                    y2 = thickness + (h - 2 * thickness) * (i_normal + 1) / count
+                    x1, x2 = 0, thickness
+                elif side == "right":
+                    y1 = thickness + (h - 2 * thickness) * i_normal / count
+                    y2 = thickness + (h - 2 * thickness) * (i_normal + 1) / count
+                    x1, x2 = w - thickness, w
+
+                self.hud_canvas.create_rectangle(x1, y1, x2, y2, fill="gray", outline="black")
+                self.hud_canvas.create_text((x1+x2)/2, (y1+y2)/2, text=str(index + 1), fill="#fffffe", font=("Arial", 14, "bold"))
+                index += 1
+
+
+    def close(self):
+        if self.hud_window:
+            self.hud_window.destroy()
+            self.hud_window = None
 
 
 class TrayApp:
