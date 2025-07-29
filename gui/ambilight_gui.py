@@ -12,10 +12,11 @@ from PIL import Image
 import serial.tools.list_ports
 import json
 import time
+from tools.logger import setup_logger
+import queue
 
-
+logger = setup_logger("TrayApp")
 CONFIG_FILE = "config/config.json"
-
 
 class SettingsWindow:
     def __init__(self, on_save=None, on_brightness_change_cb = None):
@@ -36,7 +37,7 @@ class SettingsWindow:
                     self.config = json.load(f)
                 return True
             except Exception as e:
-                print("[SettingsWindow] Config couldn't opened:", e)
+                logger.error(f"Failed to open config file: {e}")
         return False
 
 
@@ -187,9 +188,9 @@ class SettingsWindow:
         try:
             with open(self.config_file, "w") as f:
                 json.dump(config, f, indent=4)
-            print("[SettingsWindow] Configuration saved to file:", self.config_file)
+            logger.info(f"Configuration saved to file: {self.config_file}")
         except Exception as e:
-            print("[SettingsWindow] Config save error:", e)
+            logger.error(f"Failed to save configuration: {e}")
 
         #self.config_loaded = True
         self.enable_other_tabs()
@@ -213,7 +214,7 @@ class SettingsWindow:
                     if callable(self.on_brightness_change_cb):
                         self.on_brightness_change_cb(brightness)
             except Exception as e:
-                print("[SettingsWindow] Brightness change error:", e)
+                logger.error(f"Brightness change error: {e}")
         threading.Thread(target=send, daemon=True).start()
 
 
@@ -260,7 +261,7 @@ class LEDPreviewHUD:
 
     def open(self):
         self._open_hud()
-        self.master.after(200, self._open_editor)  # küçük gecikme ile editor pencereyi sonra aç
+        self.master.after(200, self._open_editor)
 
     def _open_hud(self):
         screen_width = self.master.winfo_screenwidth()
@@ -274,6 +275,7 @@ class LEDPreviewHUD:
         self.hud_canvas = tk.Canvas(self.hud_window, bg="white", highlightthickness=0)
         self.hud_canvas.pack(fill="both", expand=True)
         self.hud_window.bind("<Escape>", lambda e: self.close())
+        self.hud_window.protocol("WM_DELETE_WINDOW", self.close)
 
         self.redraw()
 
@@ -282,7 +284,8 @@ class LEDPreviewHUD:
         config_popup.title("Edit LED Configuration")
         config_popup.geometry("340x260")
         config_popup.resizable(False, False)
-
+        config_popup.bind("<Escape>", lambda e: self.close())
+        config_popup.protocol("WM_DELETE_WINDOW", lambda: [config_popup.destroy(), self.close()])
         # LED yönleri için yapı
         labels = ["Top", "Right", "Bottom", "Left"]
         vars = [self.led_top_var, self.led_right_var, self.led_bottom_var, self.led_left_var]
@@ -311,7 +314,6 @@ class LEDPreviewHUD:
             tk.Button(config_popup, text="–", width=2, command=make_stepper(delta=-1)).grid(row=i, column=2, padx=(5,0))
             tk.Button(config_popup, text="+", width=2, command=make_stepper(delta=1)).grid(row=i, column=3)
 
-        # Köşe LED'lerini etkinleştir
         corner_check = tk.Checkbutton(
             config_popup,
             text="Enable Corners",
@@ -320,12 +322,14 @@ class LEDPreviewHUD:
         )
         corner_check.grid(row=5, column=0, columnspan=3, pady=(10, 5), sticky="w")
 
-        # Apply butonu (isteğe bağlı, elle düzenleyen kullanıcılar için)
+
         def apply():
             for entry, var in zip(entries, vars):
                 var.set(entry.get())
             self.redraw()
-
+            config_popup.destroy()
+            self.close()
+            
         tk.Button(config_popup, text="Apply", command=apply).grid(row=6, column=0, columnspan=4, pady=10)
 
     
@@ -424,10 +428,12 @@ class LEDPreviewHUD:
 
 
     def close(self):
-        if self.hud_window:
+        if self.hud_canvas:
+            self.hud_canvas.delete("all")
             self.hud_window.destroy()
             self.hud_window = None
-
+            self.hud_canvas = None
+            
 
 class TrayApp:
     def __init__(self):
@@ -441,71 +447,243 @@ class TrayApp:
         
         if self.settings_ui.config_loaded:
             self._initialize_components()
-
+        self.current_brightness = 75
         self.tray_icon = None
         self.on_icon_path = "assets/led_on.png"
         self.off_icon_path = "assets/led_off.png"
-    
+
+        self.color_queue = queue.Queue(maxsize=3) 
+        self.capture_thread = None
+
+        self.stats = {
+            "frames_captured": 0,
+            "frames_sent": 0,
+            "capture_errors": 0,
+            "send_errors": 0,
+            "last_stats_time": time.time()
+        }
+
 
     def _on_config_saved(self):
-        print("[TrayApp] Config saved. Initializing components...")
+        logger.info("Configuration saved. Initializing components...")
         self._initialize_components()
 
 
     def set_brightness(self, brightness):
+        self.current_brightness = brightness
         if hasattr(self, "device") and self.device:
             self.device.send_brightness(brightness)
 
 
     def _initialize_components(self):
-        self.color_processor = ColorProcessor.from_config(self.config_path)
-        self.screen_capturer = ScreenCapturer()
-        self.device = DeviceInterface.from_config(self.config_path)
+        logger.info("Initializing components...")
+        
         try:
-            self.device.generate_ino()
+            self.color_processor = ColorProcessor.from_config(self.config_path)
+            logger.info("Color processor initialized.")
+            
+            self.screen_capturer = ScreenCapturer()
+            logger.info("Screen capturer initialized.")
+            
+            self.device = DeviceInterface.from_config(self.config_path)
+            logger.info(f"Device interface created: {self.device.port}")
+            
+            # Generate INO
+            ino_path = self.device.generate_ino()
+            logger.info(f".ino file generated: {ino_path}")
+            
+            # Upload (optional, comment out if not needed)
+            logger.info("Uploading sketch...")
             upload_success = self.device.upload_ino()
-            connect_success = False
-            if upload_success:
-                connect_success = self.device.connect()
-            self.is_device_connected = upload_success and connect_success
+            logger.info("Sketch upload successful.") if upload_success else logger.error("Sketch upload failed.")
+            
+            # Connect
+            logger.info("Connecting to device...")
+            connect_success = self.device.connect()
+            logger.info("Device connected successfully.") if connect_success else logger.error("Device connection failed.")
+            
+            self.is_device_connected = connect_success
+            
+            if self.is_device_connected:
+                logger.info("System is ready.")
+            else:
+                logger.warning("System not ready - check device connection.")
+                
         except Exception as e:
-            print("[TrayApp] Couldn't connected with the Device: ",e)
+            logger.error(f"Component initialization error: {e}")
+            self.is_device_connected = False
+
+
+    def create_queue_color_generator(self):
+        consecutive_empty = 0
+        
+        while self.running:
+            try:
+                colors = self.color_queue.get(timeout=0.05)
+                self.color_queue.task_done()
+                consecutive_empty = 0
+                self.stats["frames_sent"] += 1
+                yield colors
+                
+            except queue.Empty:
+                consecutive_empty += 1
+                if consecutive_empty == 1:
+                    logger.debug("Color queue empty, sending black")
+                yield [(0, 0, 0)] * (self.device.expected_led_count or 1)
+                
+            except Exception as e:
+                logger.error(f"Queue generator error: {e}")
+                self.stats["send_errors"] += 1
+                yield [(0, 0, 0)] * (self.device.expected_led_count or 1)
+
+
+    def screen_capture_worker(self):
+        """Ekran yakalama ve renk işleme worker'ı"""
+        if not self.settings_ui.config:
+            logger.error("No config available for capture worker")
+            return
+            
+        update_rate = self.settings_ui.config.get("update_rate_hz", 30)
+        interval = 1.0 / update_rate
+        
+        logger.info(f"Screen capture worker started at {update_rate} FPS (interval: {interval:.3f}s)")
+        
+        consecutive_errors = 0
+        last_stats_log = time.time()
+        
+        while self.running:
+            frame_start = time.time()
+            
+            try:
+                # 1. Capture frame
+                frame = self.screen_capturer.capture_screen()
+                if frame is None:
+                    logger.warning("Screen capture failed")
+                    consecutive_errors += 1
+                    time.sleep(interval)
+                    continue
+                
+                # 2. Process colors
+                raw_colors = self.color_processor.get_led_colors(frame)
+                brightness_n = self.current_brightness / 100.0
+                colors = self.color_processor.adjust_and_correct_colors(
+                    colors=raw_colors, 
+                    brightness=brightness_n
+                )
+                
+                if not colors:
+                    colors = [(0, 0, 0)] * (self.device.expected_led_count or 1)
+                
+                # 3. Add to queue
+                try:
+                    while self.color_queue.qsize() >= self.color_queue.maxsize:
+                        try:
+                            self.color_queue.get_nowait()
+                            self.color_queue.task_done()
+                        except queue.Empty:
+                            break
+                    
+                    self.color_queue.put_nowait(colors)
+                    self.stats["frames_captured"] += 1
+                    consecutive_errors = 0
+                    
+                except queue.Full:
+                    logger.debug("Color queue full, dropping frame")
+                
+            except Exception as e:
+                consecutive_errors += 1
+                self.stats["capture_errors"] += 1
+                logger.error(f"Screen capture worker error #{consecutive_errors}: {e}")
+                
+                if consecutive_errors > 10:
+                    logger.error("Too many capture errors, stopping capture worker")
+                    break
+            
+            current_time = time.time()
+            if current_time - last_stats_log > 30:
+                elapsed = current_time - self.stats["last_stats_time"]
+                fps_captured = self.stats["frames_captured"] / elapsed if elapsed > 0 else 0
+                fps_sent = self.stats["frames_sent"] / elapsed if elapsed > 0 else 0
+                
+                logger.info(f"Stats: Captured {fps_captured:.1f} FPS, Sent {fps_sent:.1f} FPS, "
+                          f"Queue size: {self.color_queue.qsize()}, "
+                          f"Errors: {self.stats['capture_errors']} capture, {self.stats['send_errors']} send")
+                
+                # Reset stats
+                self.stats = {
+                    "frames_captured": 0,
+                    "frames_sent": 0,
+                    "capture_errors": 0,
+                    "send_errors": 0,
+                    "last_stats_time": current_time
+                }
+                last_stats_log = current_time
+            
+            # Frame timing
+            frame_time = time.time() - frame_start
+            sleep_time = max(0, interval - frame_time)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+            elif frame_time > interval * 1.5:
+                logger.debug(f"Capture frame took {frame_time:.3f}s (target: {interval:.3f}s)")
+        
+        logger.info("Screen capture worker ended.")
 
 
     def start_system(self):
         if not self.is_device_connected:
             self.update_icon()
-            print("[TrayApp] Can't start: No device connected.")
+            logger.warning("Cannot start system: No device connected.")
             return
-        print("[TrayApp] System started.")
+        logger.info("System started.")
         self.running = True
         self.update_icon()
-        self.sender_threat = threading.Thread(target=self.color_sender_loop, daemon=True)
-        self.sender_threat.start()
+        while not self.color_queue.empty():
+            try:
+                self.color_queue.get_nowait()
+                self.color_queue.task_done()
+            except queue.Empty:
+                break
+        
+        self.capture_thread = threading.Thread(target=self.screen_capture_worker, daemon=True)
+        self.capture_thread.start()
+        
+        color_generator = self.create_queue_color_generator()
+        
+        update_rate = self.settings_ui.config.get("update_rate_hz", 30)
+        send_interval = 1.0 / (update_rate * 1.1)  # %10 faster (?)
+        
+        self.device.start_writing_loop(color_generator, interval=send_interval)
+        
+        logger.info(f"System started with {update_rate} Hz capture, {1/send_interval:.1f} Hz send rate")
+
 
 
     def stop_system(self):
-        print("[TrayApp] System stopped.")
+        logger.info("System stopped.")
         self.running = False
         self.update_icon()
-
-
-    def color_sender_loop(self):
-        if not self.is_device_connected:
-            print("[TrayApp] There is no device connected.")
-            return
+        if hasattr(self, "device") and self.device:
+            self.device.stop_writing_loop()
+            try:
+                self.device.close_leds()
+            except Exception as e:
+                logger.error(f"Error closing LEDs: {e}")
         
-        try:
-            # Get update_rate
-            update_rate = self.settings_ui.config.get("update_rate_hz", 30)
-            interval = 1.0 / update_rate
-
-            while self.running:
-                color = self.color_processor.get_led_colors(self.screen_capturer.capture_screen())
-                self.device.send_colors(color)
-                time.sleep(interval)
-        except Exception as e:
-            print("[TrayApp] color_sender_loop error:", e)
+        if self.capture_thread and self.capture_thread.is_alive():
+            logger.info("Waiting for capture thread to stop...")
+            self.capture_thread.join(timeout=3)
+            if self.capture_thread.is_alive():
+                logger.warning("Capture thread did not stop gracefully")
+        
+        while not self.color_queue.empty():
+            try:
+                self.color_queue.get_nowait()
+                self.color_queue.task_done()
+            except queue.Empty:
+                break
+                
+        logger.info("System stopped.")
 
 
     def open_settings(self, _=None):
@@ -513,17 +691,44 @@ class TrayApp:
 
 
     def quit_app(self, _=None):
-        print("[TrayApp] Quitting...")
+        logger.info("Quitting application...")
         self.running = False
-        if hasattr(self, "sender_thread") and self.sender_thread.is_alive():
-            self.sender_thread.join(timeout=1)
+
         if hasattr(self, "device") and self.device:
-            self.device.disconnect()
+            try:
+                self.device.stop_writing_loop()
+            except Exception as e:
+                logger.error(f"Error stopping write loop: {e}")
+                
+            try:
+                self.device.close_leds()
+            except Exception as e:
+                logger.error(f"Error closing LEDs during quit: {e}")
+                
+            try:
+                self.device.disconnect()
+            except Exception as e:
+                logger.error(f"Error disconnecting device: {e}")
+
+        if hasattr(self, "capture_thread") and self.capture_thread is not None and self.capture_thread.is_alive():
+            logger.info("Waiting for capture thread to stop...")
+            self.capture_thread.join(timeout=3)
+            if self.capture_thread.is_alive():
+                logger.warning("Capture thread did not stop gracefully")
+
         if self.tray_icon:
-            self.tray_icon.stop()
+            try:
+                self.tray_icon.stop()
+            except Exception as e:
+                logger.error(f"Error stopping tray icon: {e}")
+
         if hasattr(self, "root") and self.root:
-            self.root.quit()
-            self.root.destroy()
+            try:
+                self.root.quit()
+                self.root.destroy()
+            except Exception as e:
+                logger.error(f"Error closing GUI: {e}")
+
         os._exit(0)
 
 
@@ -560,10 +765,12 @@ class TrayApp:
         if self.settings_ui.config_loaded:
             if self.running:
                 self.stop_system()
+                if hasattr(self, "device") and self.device:
+                    self.device.close_leds()
             else:
                 self.start_system()
         else:
-            print("[TrayApp] Please enter your LED configurations.")
+            logger.warning("Configuration not loaded. Please check your settings.")
 
 
 if __name__ == "__main__":
@@ -571,6 +778,6 @@ if __name__ == "__main__":
     if sys.platform == "win32":
         import ctypes
         ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
-    print("TrayApp started!")
+    logger.info("TrayApp started.")
     app = TrayApp()
     app.run()
