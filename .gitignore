@@ -5,3 +5,5 @@
 test.py
 build/
 engine/__pycache__/
+logs/
+tools/__pycache__/
