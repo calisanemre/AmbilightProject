@@ -1,42 +1,121 @@
-#include <Arduino.h>
 #include <FastLED.h>
 
-#define LED_PIN     6
-#define NUM_LEDS    140
-#define BAUD_RATE   115200
-#define MAX_DECIMAL 4
+#define LED_PIN 7
+#define NUM_LEDS 100
+#define BAUD_RATE 250000
+
 
 CRGB leds[NUM_LEDS];
-uint8_t data[NUM_LEDS * 3];
+uint8_t brightness = 255;
+bool setup_completed = false;
+
+void starting_effect(CRGB *leds) {
+  if (setup_completed) return;
+
+  for (int i=0; i<NUM_LEDS; i++){
+    leds[i] = CRGB::White;
+    FastLED.show();
+    delay(1);
+    leds[i] = CRGB::Black;
+  }
+
+  for (int i=NUM_LEDS-2; i>0; i--){
+    leds[i] = CRGB::White;
+    FastLED.show();
+    delay(1);
+    leds[i] = CRGB::Black;
+  }
+  
+  fill_solid(leds, NUM_LEDS, CRGB::White);
+  FastLED.show();
+  delay(100);
+  fill_solid(leds, NUM_LEDS, CRGB::Black);
+  FastLED.show();
+}
 
 void setup() {
   Serial.begin(BAUD_RATE);
-  FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS);
+  delay(1000);
+  while(Serial.available()) {
+    Serial.read();
+  }
+  FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, NUM_LEDS);
+  FastLED.setBrightness(brightness);
   FastLED.clear();
   FastLED.show();
-  Serial.setTimeout(50);
+
+  starting_effect(leds);
+  setup_completed = true;
+
+  Serial.println("READY");
+  Serial.flush();
 }
 
 void loop() {
-  // === Brightness Control ===
-  if (Serial.peek() == 'b' && Serial.available() >= MAX_DECIMAL + 1) { // Brightness protocol
-    Serial.read(); 
-    char buffer[MAX_DECIMAL+1];
-    Serial.readBytes(buffer, MAX_DECIMAL);
-    buffer[MAX_DECIMAL] = '\0';
-
-    int level = atoi(buffer);
-    level = constrain(level, 0, 255);
-    FastLED.setBrightness(level);
-    FastLED.show();
-  }
-
-  // === LED Color Data ===  
-  if (Serial.available() >= NUM_LEDS * 3) {
-    Serial.readBytes(data, NUM_LEDS * 3);
-    for (int i = 0; i < NUM_LEDS; i++) {
-      leds[i] = CRGB(data[i * 3], data[i * 3 + 1], data[i * 3 + 2]);
+  if (Serial.available()) {
+    char command = Serial.read();
+    
+    if (command == 'd') {
+      // Color data incoming
+      int expected_bytes = NUM_LEDS * 3;
+      int bytes_read = 0;
+      unsigned long start_time = millis();
+      
+      while (bytes_read < expected_bytes && (millis() - start_time) < 1000) {
+        if (Serial.available() >= 3) {
+          int led_index = bytes_read / 3;
+          
+          if (led_index < NUM_LEDS) {
+            leds[led_index].r = Serial.read();
+            leds[led_index].g = Serial.read();
+            leds[led_index].b = Serial.read();
+            bytes_read += 3;
+          } else {
+            Serial.read();
+            Serial.read();
+            Serial.read();
+            bytes_read += 3;
+          }
+        }
+        delayMicroseconds(100);
+      }
+      
+      if (bytes_read == expected_bytes) {
+        FastLED.show();
+      } else {
+        Serial.print("ERROR: ");
+        Serial.print(bytes_read);
+        Serial.print("/");
+        Serial.println(expected_bytes);
+      }
+      
+    } else if (command == 'b') {
+      // Brightness command: b0255\n
+      String brightness_str = Serial.readStringUntil('\n');
+      brightness = brightness_str.toInt();
+      brightness = constrain(brightness, 0, 255);
+      
+      FastLED.setBrightness(brightness);
+      FastLED.show();
+      
+      Serial.print("BRIGHTNESS: ");
+      Serial.println(brightness);
+      
+    } else if (command == 't') {
+      // Health check
+      Serial.println("ALIVE");
+    } else {
+      // Clear any remaining unrecognized data
+      while(Serial.available()) {
+        Serial.read();
+      }
     }
-    FastLED.show();
+  }
+  
+  // Heartbeat message every 30 seconds
+  static unsigned long last_heartbeat = 0;
+  if (millis() - last_heartbeat > 30000) {
+    Serial.println("WAITING");
+    last_heartbeat = millis();
   }
 }
