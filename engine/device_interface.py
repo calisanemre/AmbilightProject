@@ -151,21 +151,6 @@ class DeviceInterface:
         logger.info("Test colors completed.")
 
 
-    def send_brightness(self, brightness_level):
-        if not self.serial or not self.serial.is_open:
-            logger.error("Serial connection is not open for brightness.")
-            return
-        try:
-            brightness_level = max(0, min(255, int(brightness_level)))
-            command = f"b{brightness_level:04d}\n"
-            self.serial.write(command.encode('ascii'))
-            self.serial.flush()
-            logger.debug(f"Brightness command sent: {command.strip()}")
-            time.sleep(0.01)
-        except Exception as e:
-            logger.error(f"Brightness command error: {e}")
-
-
     def connect(self, max_wait=5):
         def wait_for_port(port, timeout=5):
             start = time.time()

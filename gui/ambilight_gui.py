@@ -19,7 +19,7 @@ logger = setup_logger("TrayApp")
 CONFIG_FILE = "config/config.json"
 
 class SettingsWindow:
-    def __init__(self, on_save=None, on_brightness_change_cb = None):
+    def __init__(self, on_save=None, on_brightness_change_cb = None, on_tolerance_change_cb = None):
         self.window = None
         self.notebook = None
         self.config = None
@@ -28,7 +28,8 @@ class SettingsWindow:
         self.on_save = on_save
         self.on_brightness_change_cb = on_brightness_change_cb
         self.last_sent_brightness = None
-
+        self.on_tolerance_change_cb = on_tolerance_change_cb
+        self.last_sent_tolerance = None
 
     def load_config_if_exists(self):
         if os.path.exists(self.config_file):
@@ -60,9 +61,7 @@ class SettingsWindow:
         self.tab_advanced = ttk.Frame(self.notebook)
         self.tab_configure = ttk.Frame(self.notebook)
 
-        self.notebook.add(self.tab_general, text="General",
-                        state="normal" if self.config_loaded else "disabled")
-        self.notebook.add(self.tab_advanced, text="Advanced",
+        self.notebook.add(self.tab_general, text="Light Settings",
                         state="normal" if self.config_loaded else "disabled")
         self.notebook.add(self.tab_configure, text="Configure")
 
@@ -73,8 +72,6 @@ class SettingsWindow:
 
         if self.config_loaded:
             self.notebook.select(0)
-
-        #self.window = None
 
 
     def setup_configure_tab(self):
@@ -216,6 +213,19 @@ class SettingsWindow:
             except Exception as e:
                 logger.error(f"Brightness change error: {e}")
         threading.Thread(target=send, daemon=True).start()
+    
+    
+    def on_brightness_tolerance_change(self, value):
+        def send():
+            try:
+                tolerance = round(float(value))
+                if getattr(self, "last_sent_tolerance", None) != tolerance:
+                    self.last_sent_tolerance = tolerance
+                    if callable(self.on_tolerance_change_cb):
+                        self.on_tolerance_change_cb(tolerance)
+            except Exception as e:
+                logger.error(f"Brightness Tolerance change error: {e}")
+        threading.Thread(target=send, daemon=True).start()
 
 
     def setup_general_tab(self):
@@ -229,8 +239,21 @@ class SettingsWindow:
             variable=self.brightness_var,
             command=self.on_brightness_change
         )
-        self.brightness_slider.set(75)
+        self.brightness_slider.set(self.config.get("brightness",75))
         self.brightness_slider.pack()
+
+        ttk.Label(self.tab_general, text="Brightness Tolerance:").pack(pady=(10, 0))
+        self.brightness_tolerance_var = tk.DoubleVar()
+        self.brightness_tolerance_slider = ttk.Scale(
+            self.tab_general,
+            from_=0,
+            to=100,
+            orient='horizontal',
+            variable=self.brightness_tolerance_var,
+            command=self.on_brightness_change
+        )
+        self.brightness_tolerance_slider.set(self.config.get("brightnes_tolerance",20))
+        self.brightness_tolerance_slider.pack()
 
 
     def show_led_preview_window(self):
@@ -442,12 +465,14 @@ class TrayApp:
         self.config_path = CONFIG_FILE
         self.settings_ui = SettingsWindow(
             on_save=self._on_config_saved,
-            on_brightness_change_cb=self.set_brightness
+            on_brightness_change_cb=self.set_brightness,
+            on_tolerance_change_cb=self.set_brightness_tolerance
             )
         
         if self.settings_ui.config_loaded:
             self._initialize_components()
-        self.current_brightness = 75
+        self.current_brightness = self.settings_ui.config.get("brightness", 75)
+        self.current_brightness_tolerance = self.settings_ui.config.get("brightness_tolerance", 20)
         self.tray_icon = None
         self.on_icon_path = "assets/led_on.png"
         self.off_icon_path = "assets/led_off.png"
@@ -471,8 +496,21 @@ class TrayApp:
 
     def set_brightness(self, brightness):
         self.current_brightness = brightness
-        if hasattr(self, "device") and self.device:
-            self.device.send_brightness(brightness)
+
+    def set_brightness_tolerance(self, brightness_tolerance):
+        self.current_brightness_tolerance = brightness_tolerance
+
+        # Yeni toleransla birlikte parlaklık aralığını yeniden hesapla
+        clip = self.current_brightness_tolerance
+        scale_range = max(1, 255 - clip)
+
+        # %'lik parlaklığı bu yeni aralığa göre normalize et
+        brightness_percent = self.current_brightness / 100.0
+        effective_brightness = clip + brightness_percent * scale_range
+        effective_brightness_percent = (effective_brightness / 255) * 100
+
+        # Güncel parlaklığı yeni skala ile tekrar uygula
+        self.set_brightness(effective_brightness_percent)   
 
 
     def _initialize_components(self):
@@ -538,7 +576,6 @@ class TrayApp:
 
 
     def screen_capture_worker(self):
-        """Ekran yakalama ve renk işleme worker'ı"""
         if not self.settings_ui.config:
             logger.error("No config available for capture worker")
             return
@@ -568,7 +605,8 @@ class TrayApp:
                 brightness_n = self.current_brightness / 100.0
                 colors = self.color_processor.adjust_and_correct_colors(
                     colors=raw_colors, 
-                    brightness=brightness_n
+                    brightness=brightness_n,
+                    min_brightness_clip=self.current_brightness_tolerance
                 )
                 
                 if not colors:

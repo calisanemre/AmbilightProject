@@ -6,7 +6,7 @@ from tools.logger import setup_logger
 logger = setup_logger("ScreenCapturer")
 
 class ScreenCapturer:
-    def __init__(self, monitor_index=2):
+    def __init__(self, monitor_index=1):
         """
         monitor_index:
             0 = all screens combined

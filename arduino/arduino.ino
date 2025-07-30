@@ -2,7 +2,7 @@
 
 #define LED_PIN 7
 #define NUM_LEDS 100
-#define BAUD_RATE 250000
+#define BAUD_RATE 200000
 
 
 CRGB leds[NUM_LEDS];
@@ -41,6 +41,7 @@ void setup() {
   }
   FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, NUM_LEDS);
   FastLED.setBrightness(brightness);
+  FastLED.setCorrection(TypicalPixelString);
   FastLED.clear();
   FastLED.show();
 
@@ -88,18 +89,6 @@ void loop() {
         Serial.print("/");
         Serial.println(expected_bytes);
       }
-      
-    } else if (command == 'b') {
-      // Brightness command: b0255\n
-      String brightness_str = Serial.readStringUntil('\n');
-      brightness = brightness_str.toInt();
-      brightness = constrain(brightness, 0, 255);
-      
-      FastLED.setBrightness(brightness);
-      FastLED.show();
-      
-      Serial.print("BRIGHTNESS: ");
-      Serial.println(brightness);
       
     } else if (command == 't') {
       // Health check

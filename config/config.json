@@ -1,18 +1,15 @@
 {
     "led_config": {
-        "top": 30,
-        "right": 20,
-        "bottom": 30,
-        "left": 20
+        "top": 32,
+        "right": 18,
+        "bottom": 32,
+        "left": 18
     },
-    "serial_port": "COM5",
-    "baud_rate": 250000,
+    "serial_port": "COM3",
+    "baud_rate": 200000,
     "margin": 10,
-    "update_rate_hz": 10,
-    "order": "clockwise",
+    "update_rate_hz": 60,
+    "order": "counterclockwise",
     "start_side": "bottom",
-    "enable_corners": true,
-    "coef_red": 1.0,
-    "coef_green": 0.78,
-    "coef_blue": 0.23
+    "enable_corners": false
 }

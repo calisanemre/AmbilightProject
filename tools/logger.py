@@ -1,14 +1,12 @@
 import logging
 import os
 
-def setup_logger(name: str = "AmbilightLogger", log_file: str = "logs/ambilight.log", level=logging.DEBUG) -> logging.Logger:
-    # Klasör varsa oluştur
+def setup_logger(name: str = "AmbilightLogger", log_file: str = "logs/ambilight.log", level=logging.WARNING) -> logging.Logger:
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
 
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
-    # Aynı logger tekrar eklenmesin
     if not logger.hasHandlers():
 
         # Format

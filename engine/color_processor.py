@@ -265,11 +265,34 @@ class ColorProcessor:
             return []
         
 
-    def adjust_and_correct_colors(self, colors, brightness=1.0):
+    def adjust_and_correct_colors(self, colors, brightness=1.0, min_brightness_clip=28):
         corrected = []
+
         for color in colors:
-            scaled = np.clip(color * brightness, 0, 255).astype(int)
-            corrected_color = self.gamma_table[scaled]
-            corrected.append(tuple(corrected_color))
+            try:
+                
+                r = color[0] * brightness  #* self.coef_r 
+                g = color[1] * brightness  #* self.coef_g
+                b = color[2] * brightness  #* self.coef_b
+                scaled = np.array([r, g, b], dtype=np.float32)
+                rgb = np.uint8([[scaled]])  
+                hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)[0][0]
+                brightness_value = hsv[2] 
+
+                if brightness_value < min_brightness_clip:
+                    corrected.append((0, 0, 0)) 
+                    continue
+
+                scale_range = 255 - min_brightness_clip
+                adjusted = (scaled - min_brightness_clip) / scale_range * 255
+                adjusted = np.clip(adjusted, 0, 255).astype(np.uint8)
+
+                final = adjusted#self.gamma_table[adjusted]
+                corrected.append(tuple(final))
+
+            except Exception as e:
+                logger.error(f"Color correction failed: {e}")
+                corrected.append((0, 0, 0))
 
         return corrected
+
