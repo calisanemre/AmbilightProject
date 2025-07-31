@@ -314,8 +314,6 @@ class DeviceInterface:
             subprocess.run(upload_cmd, check=True)
 
             logger.info("Sketch uploaded successfully.")
-
-            #self.serial = serial.Serial(self.port, self.baudrate, timeout=1)
             time.sleep(3)
             self.start_reading_arduino_output()
 

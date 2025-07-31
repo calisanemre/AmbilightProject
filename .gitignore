@@ -4,6 +4,7 @@
 *.code-workspace/
 test.py
 build/
-engine/__pycache__/
 logs/
+engine/__pycache__/
 tools/__pycache__/
+gui/__pycache__/

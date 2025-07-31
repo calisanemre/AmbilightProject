@@ -1,8 +1,8 @@
 #include <FastLED.h>
 
 #define LED_PIN 7
-#define NUM_LEDS 100
-#define BAUD_RATE 200000
+#define NUM_LEDS 98
+#define BAUD_RATE 250000
 
 
 CRGB leds[NUM_LEDS];

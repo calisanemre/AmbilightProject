@@ -14,7 +14,7 @@ class ColorProcessor:
         self.coef_b = coef_b
         self.gamma_table = np.array([int((i / 255) ** (1 / gamma) * 255 + 0.5) for i in range(256)], dtype=np.uint8)
         self.led_config = led_config
-        self.margin = max(10, int(margin))  # Minimum 10px margin
+        self.margin = max(1, int(margin))
         self.order = order.lower().replace("-", "").replace("_", "")
         self.start_side = start_side.lower()
         self.enable_corners = enable_corners
@@ -33,9 +33,9 @@ class ColorProcessor:
             order = config.get("order", "clockwise")
             start_side = config.get("start_side", "bottom")
             enable_corners = config.get("enable_corners", False)
-            coef_r = config.get("coef_red", 1.0)
-            coef_g = config.get("coef_green", 1.0)
-            coef_b = config.get("coef_blue", 1.0)
+            coef_r = config.get("color_coefs", {}).get("coef_r", 1.0)
+            coef_g = config.get("color_coefs", {}).get("coef_g", 1.0)
+            coef_b = config.get("color_coefs", {}).get("coef_b", 1.0)
 
 
             logger.info(f"Configuration loaded from {config_path}: {led_config}")
@@ -83,29 +83,22 @@ class ColorProcessor:
                 try:
                     h, w = image_region.shape[:2]
                     
-                    # Kernel boyutunu otomatik hesapla
                     if kernel_size is None:
                         kernel_size = min(max(5, min(h, w) // 4), 15)
-                        # Tek sayı yap (merkez için)
                         kernel_size = kernel_size if kernel_size % 2 == 1 else kernel_size + 1
                     
-                    # Gaussian kernel oluştur
                     center = kernel_size // 2
                     kernel = np.zeros((kernel_size, kernel_size))
                     
                     for i in range(kernel_size):
                         for j in range(kernel_size):
                             x, y = i - center, j - center
-                            # Gaussian formülü: e^(-(x²+y²)/(2σ²))
                             kernel[i, j] = math.exp(-(x*x + y*y) / (2 * sigma * sigma))
                     
-                    # Normalize et (toplamı 1 olsun)
                     kernel = kernel / np.sum(kernel)
                     
-                    # Kernel'i region boyutuna resize et
                     kernel_resized = cv2.resize(kernel, (w, h))
                     
-                    # Her renk kanalı için ağırlıklı ortalama hesapla
                     weighted_sum = np.zeros(3)
                     total_weight = np.sum(kernel_resized)
                     
@@ -113,14 +106,12 @@ class ColorProcessor:
                         channel_data = image_region[:, :, channel].astype(np.float32)
                         weighted_sum[channel] = np.sum(channel_data * kernel_resized)
                     
-                    # Final rengi hesapla
                     final_color = weighted_sum / total_weight
                     
                     return np.clip(final_color, 0, 255).astype(np.uint8)
                     
                 except Exception as e:
                     logger.error(f"Gaussian weighted average failed: {e}")
-                    # Fallback: basit ortalama
                     return np.mean(image_region, axis=(0, 1)).astype(np.uint8)
 
                     
@@ -131,32 +122,26 @@ class ColorProcessor:
                 try:
                     h, w = image_region.shape[:2]
                     
-                    # Blur uygula (gürültü azaltma için)
                     if blur_before_split and h > 5 and w > 5:
-                        # Adaptif blur - küçük bölgeler için az blur
                         blur_size = max(3, min(h, w) // 10)
                         if blur_size % 2 == 0:
-                            blur_size += 1  # Tek sayı olmalı
+                            blur_size += 1
                         region = cv2.GaussianBlur(image_region, (blur_size, blur_size), 0)
                     else:
                         region = image_region.copy()
                     
-                    # Bölme yönünü belirle (uzun kenar boyunca böl)
                     split_horizontally = w > h
                     
                     segments = []
                     
                     if split_horizontally:
-                        # Yatay bölme (width boyunca)
                         segment_width = w / num_segments
                         overlap_pixels = int(segment_width * overlap_ratio)
                         
                         for i in range(num_segments):
-                            # Segment sınırlarını hesapla (örtüşme ile)
                             start = max(0, int(i * segment_width) - overlap_pixels)
                             end = min(w, int((i + 1) * segment_width) + overlap_pixels)
                             
-                            # İlk ve son segment için örtüşme düzeltmesi
                             if i == 0:
                                 start = 0
                             if i == num_segments - 1:
@@ -166,7 +151,6 @@ class ColorProcessor:
                             segments.append(segment)
                             
                     else:
-                        # Dikey bölme (height boyunca)
                         segment_height = h / num_segments
                         overlap_pixels = int(segment_height * overlap_ratio)
                         
@@ -182,7 +166,6 @@ class ColorProcessor:
                             segment = region[start:end, :, :]
                             segments.append(segment)
                     
-                    # Segment kalitesini kontrol et
                     valid_segments = []
                     for i, segment in enumerate(segments):
                         if segment.size > 0:
@@ -191,7 +174,6 @@ class ColorProcessor:
                     
                 except Exception as e:
                     logger.error(f"Smart segmentation failed: {e}")
-                    # Fallback: basit numpy split
                     axis = 1 if image_region.shape[1] > image_region.shape[0] else 0
                     return np.array_split(image_region, num_segments, axis=axis)
 
@@ -271,9 +253,9 @@ class ColorProcessor:
         for color in colors:
             try:
                 
-                r = color[0] * brightness  #* self.coef_r 
-                g = color[1] * brightness  #* self.coef_g
-                b = color[2] * brightness  #* self.coef_b
+                r = color[0] * brightness  * self.coef_r 
+                g = color[1] * brightness  * self.coef_g
+                b = color[2] * brightness  * self.coef_b
                 scaled = np.array([r, g, b], dtype=np.float32)
                 rgb = np.uint8([[scaled]])  
                 hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)[0][0]
@@ -287,7 +269,7 @@ class ColorProcessor:
                 adjusted = (scaled - min_brightness_clip) / scale_range * 255
                 adjusted = np.clip(adjusted, 0, 255).astype(np.uint8)
 
-                final = adjusted#self.gamma_table[adjusted]
+                final = self.gamma_table[adjusted]
                 corrected.append(tuple(final))
 
             except Exception as e:

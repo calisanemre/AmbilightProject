@@ -1,15 +1,22 @@
 {
     "led_config": {
-        "top": 32,
+        "top": 31,
         "right": 18,
-        "bottom": 32,
+        "bottom": 31,
         "left": 18
     },
-    "serial_port": "COM3",
-    "baud_rate": 200000,
+    "serial_port": "COM6",
+    "baud_rate": 250000,
     "margin": 10,
     "update_rate_hz": 60,
     "order": "counterclockwise",
     "start_side": "bottom",
-    "enable_corners": false
+    "enable_corners": true,
+    "color_coefs": {
+        "coef_r": 1.0,
+        "coef_g": 1.0,
+        "coef_b": 0.9
+    },
+    "brightness": 87,
+    "brightness_tolerance": 14
 }
