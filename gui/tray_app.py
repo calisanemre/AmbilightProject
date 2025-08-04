@@ -1,6 +1,6 @@
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+#sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from engine.device_interface import DeviceInterface
 from engine.screen_capture import ScreenCapturer
 from engine.color_processor import ColorProcessor
@@ -393,5 +393,4 @@ class TrayApp:
             import ctypes
             ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
         logger.info("TrayApp started.")
-        app = TrayApp()
         self.run()
