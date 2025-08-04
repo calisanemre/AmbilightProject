@@ -6,6 +6,7 @@
         "left": 18
     },
     "serial_port": "COM6",
+    "led_pin": 7,
     "baud_rate": 250000,
     "margin": 10,
     "update_rate_hz": 60,
@@ -17,6 +18,7 @@
         "coef_g": 1.0,
         "coef_b": 0.9
     },
-    "brightness": 87,
-    "brightness_tolerance": 14
+    "brightness": 89,
+    "brightness_tolerance": 27,
+    "version": 1
 }

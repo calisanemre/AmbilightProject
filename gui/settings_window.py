@@ -179,6 +179,7 @@ class SettingsWindow:
                 "left": int(self.led_left.get())
             },
             "serial_port": self.serial_port_combo.get(),
+            "led_pin": 7,
             "baud_rate": int(self.baud_rate_combo.get()),
             "margin": int(self.margin_entry.get()),
             "update_rate_hz": int(self.update_rate_combo.get()),
@@ -191,7 +192,8 @@ class SettingsWindow:
                 "coef_b": 0.9 #0.33
             },
             "brightness": int(self.brightness_var.get()) if hasattr(self, 'brightness_var') else 75,
-            "brightness_tolerance": int(self.brightness_tolerance_var.get()) if hasattr(self, 'brightness_tolerance_var') else 20
+            "brightness_tolerance": int(self.brightness_tolerance_var.get()) if hasattr(self, 'brightness_tolerance_var') else 20,
+            "version": 1
     
         }
 

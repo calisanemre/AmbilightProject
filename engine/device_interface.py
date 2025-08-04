@@ -2,16 +2,21 @@ import time
 import serial
 import json
 import os
+import struct
 import subprocess
 import threading
 from tools.logger import setup_logger
 
+CONFIG_STRUCT_FORMAT = "<BBIBB"
 logger = setup_logger("DeviceInterface")
 
 class DeviceInterface:
-    def __init__(self, port, baudrate, timeout=1, write_timeout=1):
+    def __init__(self, port, baudrate, led_pin, update_rate, version, timeout=1, write_timeout=0.5):
         self.port = port
         self.baudrate = baudrate
+        self.led_pin = led_pin
+        self.update_rate = update_rate
+        self.version = version
         self.timeout = timeout
         self.write_timeout = write_timeout
         self.serial = None
@@ -30,12 +35,26 @@ class DeviceInterface:
 
         port = config.get("serial_port", "COM5")
         baudrate = config.get("baud_rate", 115200)
-        instance = cls(port=port, baudrate=baudrate, write_timeout=0.5)
+        led_pin = config.get("led_pin", 7)
+        update_rate = config.get("update_rate_hz", 30)
+        version = config.get("version", 1)
+        instance = cls(port=port, baudrate=baudrate, led_pin=led_pin, update_rate=update_rate, version=version)
         instance.expected_led_count = sum(config.get("led_config", {}).values())
-
-        logger.info(f"Expected LED count: {instance.expected_led_count}")
         return instance
     
+
+    def update_self(self, config_path="config/config.json"):
+        with open(config_path) as f:
+            config = json.load(f)
+
+        self.port = config.get("serial_port", self.port)
+        self.baudrate = config.get("baud_rate", self.baudrate)
+        self.led_pin = config.get("led_pin", self.led_pin)
+        self.update_rate = config.get("update_rate_hz", self.update_rate)
+        self.version = config.get("version", self.version)
+        self.expected_led_count = sum(config.get("led_config", {}).values())
+
+
 
     def start_reading_arduino_output(self):
         if not self.serial or not self.serial.is_open:
@@ -133,6 +152,35 @@ class DeviceInterface:
             
         except Exception as e:
             logger.error(f"Data transmission error: {e}")
+            return False
+
+
+    def send_config(self):
+        if not self.serial or not self.serial.is_open:
+                logger.error("Serial not open during config send.")
+                return False
+
+        try:
+            
+            self.update_self()
+            config_bytes = struct.pack(
+                CONFIG_STRUCT_FORMAT,
+                self.led_pin,
+                self.expected_led_count,
+                self.baudrate,
+                self.update_rate,
+                self.version
+            )
+
+            self.serial.write(b'w')
+            self.serial.write(config_bytes)
+            self.serial.flush()
+
+            response = self.serial.readline().decode(errors="ignore").strip()
+            logger.info(f"[Arduino]: {response}")
+            return "CONFIG_SAVED" in response
+        except Exception as e:
+            logger.error(f"Failed to send config: {e}")
             return False
 
 

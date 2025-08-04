@@ -30,7 +30,7 @@ class TrayApp:
             )
         
         if self.settings_ui.config_loaded:
-            self._initialize_components()
+            self._initialize_components(first_time_start=False)
         self.current_brightness = self.settings_ui.config.get("brightness", 75)
         self.current_brightness_tolerance = self.settings_ui.config.get("brightness_tolerance", 20)
         self.tray_icon = None
@@ -50,8 +50,8 @@ class TrayApp:
 
 
     def _on_config_saved(self):
-        logger.info("Configuration saved. Initializing components...")
-        self._initialize_components()
+        logger.info("Configuration saved.")
+        self.send_current_config_to_device()
 
 
     def set_brightness(self, brightness):
@@ -90,7 +90,8 @@ class TrayApp:
     def get_current_values(self):
         return self.current_brightness, self.current_brightness_tolerance
 
-    def _initialize_components(self):
+
+    def _initialize_components(self, first_time_start):
         logger.info("Initializing components...")
         
         try:
@@ -103,22 +104,22 @@ class TrayApp:
             self.device = DeviceInterface.from_config(self.config_path)
             logger.info(f"Device interface created: {self.device.port}")
             
-            # Generate INO
-            ino_path = self.device.generate_ino()
-            logger.info(f".ino file generated: {ino_path}")
-            
-            # Upload
-            logger.info("Uploading sketch...")
-            upload_success = self.device.upload_ino()
-            logger.info("Sketch upload successful.") if upload_success else logger.error("Sketch upload failed.")
-            
+            if first_time_start:
+                # Generate INO
+                ino_path = self.device.generate_ino()
+                logger.info(f".ino file generated: {ino_path}")
+
+                # Upload
+                logger.info("Uploading sketch...")
+                upload_success = self.device.upload_ino()
+                logger.info("Sketch upload successful.") if upload_success else logger.error("Sketch upload failed.")
+
             # Connect
             logger.info("Connecting to device...")
             connect_success = self.device.connect()
             logger.info("Device connected successfully.") if connect_success else logger.error("Device connection failed.")
-            
             self.is_device_connected = connect_success
-            
+
             if self.is_device_connected:
                 logger.info("System is ready.")
             else:
@@ -127,6 +128,21 @@ class TrayApp:
         except Exception as e:
             logger.error(f"Component initialization error: {e}")
             self.is_device_connected = False
+
+    
+    def send_current_config_to_device(self):
+        if not hasattr(self, "device") or not self.device:
+            logger.warning("No device to send configuration to.")
+            return
+
+        if not hasattr(self.settings_ui, "config") or not self.settings_ui.config:
+            logger.warning("No configuration data available.")
+            return
+
+        try:
+            self.device.send_config()
+        except Exception as e:
+            logger.error(f"Failed to send configuration to Arduino: {e}")
 
 
     def create_queue_color_generator(self):
